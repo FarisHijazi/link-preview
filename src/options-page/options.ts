@@ -52,6 +52,14 @@ const configOptions: Config[] = [
     ],
   },
   {
+    id: "glance-animation",
+    type: "switch",
+    title: "Glance Animation",
+    description:
+      "Animate the preview panel in and out, Safari-Glance style.",
+    default_value: true,
+  },
+  {
     id: "close-on-esc",
     type: "switch",
     title: i18n("Close on Escape Key"),
@@ -66,6 +74,14 @@ const configOptions: Config[] = [
       "Hides the preview panel when you scroll away or interact with the main page.",
     ),
     default_value: false,
+  },
+  {
+    id: "close-on-click-outside",
+    type: "switch",
+    title: "Close on Click Outside",
+    description:
+      "Close the preview panel when clicking anywhere outside of it.",
+    default_value: true,
   },
   {
     id: "preview-in-side-panel",
@@ -111,6 +127,14 @@ const configOptions: Config[] = [
     description:
       "Also preview links that point to the site you are on (needed for apps like Basecamp, GitHub, etc).",
     default_value: true,
+  },
+  {
+    id: "click-preview-to-open",
+    type: "switch",
+    title: "Click Preview to Open",
+    description:
+      "Clicking anywhere on the preview opens the page in a new tab instead of interacting with it, like Safari's Glance preview.",
+    default_value: false,
   },
   {
     id: "blocked-sites",
