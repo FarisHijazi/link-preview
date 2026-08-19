@@ -4,7 +4,7 @@ import "./previewr.css";
 import { sanitizeUrl } from "@braintree/sanitize-url";
 import { Readability } from "@mozilla/readability";
 import "../utils/feedback/feedback";
-import { FeedbackData } from "../background-script/feedback-checker";
+import { FeedbackData } from "../utils/feedback-checker";
 import { FEEDBACK_DATA_KEY } from "../utils/storage";
 import Storage from "../utils/storage";
 import Analytics from "../utils/analytics";
