@@ -1,0 +1,10 @@
+{
+  "name": "build-tools",
+  "version": "1.0.0",
+  "description": "Build tooling for the extension (vendored, formerly the xtensions-tools submodule)",
+  "type": "module",
+  "private": true,
+  "dependencies": {
+    "esbuild": "^0.16.4"
+  }
+}
