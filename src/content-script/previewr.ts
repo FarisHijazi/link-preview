@@ -202,6 +202,12 @@ export class Previewr {
 
   async previewUrl(url: URL) {
     this.logger.log("#previewUrl: ", url);
+    // If the dialog is mid close-animation, finish closing it now so the new
+    // preview gets a fresh dialog instead of being destroyed by the pending
+    // forced close.
+    if ((this.dialog as any)?.spClosing) {
+      this.dialog.close(true);
+    }
     this.url = url;
 
     const winboxOptions = await this.getWinboxOptions(url);
@@ -348,18 +354,33 @@ export class Previewr {
       height = "40%";
       top = "500px";
     }
+    const glanceAnimation = (await Storage.get("glance-animation")) ?? true;
     let options: any = {
       icon: this.headerIconUrlBase + url.hostname,
       y: top,
       width: width,
       height: height,
-      class: ["no-max", "no-full"],
+      class: glanceAnimation
+        ? ["no-max", "no-full", "sp-glance"]
+        : ["no-max", "no-full"],
       index: await this.getMaxZIndex(),
       hidden: false,
       shadowel: "search-preview-window",
       framename: iframeName,
 
-      onclose: () => {
+      onclose: (force?: boolean) => {
+        // Play the close animation first, then close for real (force=true).
+        if (!force && glanceAnimation && this.dialog) {
+          const dialog: any = this.dialog;
+          if (dialog.spClosing) {
+            return true;
+          }
+          dialog.spClosing = true;
+          dialog.addClass("sp-glance-out");
+          // dialog.dom is nulled if something else already force-closed it.
+          setTimeout(() => dialog.dom && dialog.close(true), 170);
+          return true;
+        }
         this.navStack = [];
         this.url = undefined;
         this.dialog = undefined;
