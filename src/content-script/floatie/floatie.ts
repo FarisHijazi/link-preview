@@ -102,8 +102,6 @@ export class Floatie {
    */
   setupLinkPreviews() {
     const anchors = document.querySelectorAll("a");
-    let showTimeout: any = null;
-    let hideTimeout: any = null;
     anchors.forEach((a: HTMLAnchorElement) => {
       if (!this.isGoodUrl(a.href)) {
         return;
@@ -116,17 +114,29 @@ export class Floatie {
 
       // TODO: check if computed display is 'none', i.e. link is hidden.
 
+      // Timers are per-anchor so rapid movement across links can't orphan them.
+      let showTimeout: any = null;
+      let hideTimeout: any = null;
+      let hovered = false;
+
       // mouseenter/mouseleave don't re-fire when moving across the link's children.
       a.addEventListener("mouseenter", async (e) => {
+        hovered = true;
         if (hideTimeout) {
           clearTimeout(hideTimeout);
           hideTimeout = null;
         }
 
         const previewOnHover = (await Storage.get("preview-on-hover")) ?? true;
+        const delaySecs = (await Storage.get("preview-on-hover-delay")) ?? 1;
+        if (!hovered) {
+          // The pointer left the link while settings were being read.
+          return;
+        }
+        clearTimeout(showTimeout);
+
         if (previewOnHover) {
           // Preview directly on hover, no tooltip interaction needed.
-          const delaySecs = (await Storage.get("preview-on-hover-delay")) ?? 1;
           showTimeout = setTimeout(() => {
             this.hideAll();
             this.sendMessage("preview", a.href);
@@ -142,6 +152,7 @@ export class Floatie {
       });
 
       a.addEventListener("mouseleave", () => {
+        hovered = false;
         if (showTimeout) {
           clearTimeout(showTimeout);
           showTimeout = null;
