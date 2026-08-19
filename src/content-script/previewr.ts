@@ -89,11 +89,17 @@ export class Previewr {
     }
   };
 
-  // Close the dialog preview on click outside of the preview panel, when automatically-hide-previews is enabled.
+  // Close the dialog preview on click outside of the preview panel.
   async clickHandler(e) {
     const autoHide =
       (await Storage.get("automatically-hide-previews")) ?? false;
-    if (autoHide && this.dialog && !this.dialog.dom.contains(e.target)) {
+    const closeOnClickOutside =
+      (await Storage.get("close-on-click-outside")) ?? true;
+    if (
+      (autoHide || closeOnClickOutside) &&
+      this.dialog &&
+      !this.dialog.dom.contains(e.target)
+    ) {
       this.dialog.close();
     }
   }

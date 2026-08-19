@@ -68,6 +68,14 @@ const configOptions: Config[] = [
     default_value: false,
   },
   {
+    id: "close-on-click-outside",
+    type: "switch",
+    title: "Close on Click Outside",
+    description:
+      "Close the preview panel when clicking anywhere outside of it.",
+    default_value: true,
+  },
+  {
     id: "preview-in-side-panel",
     type: "switch",
     title: i18n("Preview in Side Panel"),
