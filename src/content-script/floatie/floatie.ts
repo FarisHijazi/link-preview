@@ -119,6 +119,14 @@ export class Floatie {
       let hideTimeout: any = null;
       let hovered = false;
 
+      // When a deep-click fires, stop the pending hover preview of the same
+      // link so it isn't sent twice.
+      this.setupDeepClick(a, () => {
+        hovered = false;
+        clearTimeout(showTimeout);
+        showTimeout = null;
+      });
+
       // mouseenter/mouseleave don't re-fire when moving across the link's children.
       a.addEventListener("mouseenter", async (e) => {
         hovered = true;
@@ -162,6 +170,82 @@ export class Floatie {
         }, 2000);
       });
     });
+  }
+
+  /*
+   * Approximates macOS Force Touch ("deep click") on a link: press and hold
+   * for a moment to preview it immediately, instead of clicking through.
+   * Chromium does not expose the trackpad force sensor (the webkitmouseforce*
+   * events are Safari-only), so press-and-hold is the closest mapping; the
+   * real force event is still wired up opportunistically in case it exists.
+   */
+  setupDeepClick(a: HTMLAnchorElement, onFire: () => void) {
+    let pressTimer: any = null;
+    let pressed = false;
+    let previewFired = false;
+
+    const fire = () => {
+      previewFired = true;
+      onFire();
+      this.hideAll();
+      this.sendMessage("preview", a.href);
+    };
+
+    const cancel = () => {
+      pressed = false;
+      if (pressTimer) {
+        clearTimeout(pressTimer);
+        pressTimer = null;
+      }
+    };
+
+    a.addEventListener("pointerdown", async (e: PointerEvent) => {
+      if (e.button !== 0) {
+        return;
+      }
+      pressed = true;
+      previewFired = false;
+      const deepClick = (await Storage.get("deep-click-preview")) ?? true;
+      if (!deepClick || !pressed) {
+        // Disabled, or released/left while settings were being read.
+        return;
+      }
+      pressTimer = setTimeout(fire, 450);
+    });
+    a.addEventListener("pointerup", cancel);
+    // Releasing away from the link produces no anchor click to swallow, so
+    // previewFired must be cleared too or a later normal click would be eaten.
+    a.addEventListener("pointerleave", () => {
+      cancel();
+      previewFired = false;
+    });
+    a.addEventListener("pointercancel", () => {
+      cancel();
+      previewFired = false;
+    });
+
+    // Real Force Touch, where the browser exposes it (Safari-only today).
+    a.addEventListener("webkitmouseforcedown", async () => {
+      const deepClick = (await Storage.get("deep-click-preview")) ?? true;
+      if (!deepClick) {
+        return;
+      }
+      cancel();
+      fire();
+    });
+
+    // Swallow the click that ends a deep-click so the link doesn't navigate.
+    a.addEventListener(
+      "click",
+      (e) => {
+        if (previewFired) {
+          e.preventDefault();
+          e.stopImmediatePropagation();
+          previewFired = false;
+        }
+      },
+      true,
+    );
   }
 
   stopListening(): void {
