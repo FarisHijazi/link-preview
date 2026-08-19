@@ -52,6 +52,14 @@ const configOptions: Config[] = [
     ],
   },
   {
+    id: "glance-animation",
+    type: "switch",
+    title: "Glance Animation",
+    description:
+      "Animate the preview panel in and out, Safari-Glance style.",
+    default_value: true,
+  },
+  {
     id: "close-on-esc",
     type: "switch",
     title: i18n("Close on Escape Key"),
