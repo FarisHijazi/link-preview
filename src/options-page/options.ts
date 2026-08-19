@@ -105,6 +105,14 @@ const configOptions: Config[] = [
     default_value: true,
   },
   {
+    id: "preview-same-site-links",
+    type: "switch",
+    title: "Preview Same-Site Links",
+    description:
+      "Also preview links that point to the site you are on (needed for apps like Basecamp, GitHub, etc).",
+    default_value: true,
+  },
+  {
     id: "blocked-sites",
     type: "textarea",
     title: "Disabled on Websites",
