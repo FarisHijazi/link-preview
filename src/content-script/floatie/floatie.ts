@@ -102,8 +102,6 @@ export class Floatie {
    */
   setupLinkPreviews() {
     const anchors = document.querySelectorAll("a");
-    let showTimeout: any = null;
-    let hideTimeout: any = null;
     anchors.forEach((a: HTMLAnchorElement) => {
       if (!this.isGoodUrl(a.href)) {
         return;
@@ -116,19 +114,37 @@ export class Floatie {
 
       // TODO: check if computed display is 'none', i.e. link is hidden.
 
-      this.setupDeepClick(a);
+      // Timers are per-anchor so rapid movement across links can't orphan them.
+      let showTimeout: any = null;
+      let hideTimeout: any = null;
+      let hovered = false;
+
+      // When a deep-click fires, stop the pending hover preview of the same
+      // link so it isn't sent twice.
+      this.setupDeepClick(a, () => {
+        hovered = false;
+        clearTimeout(showTimeout);
+        showTimeout = null;
+      });
 
       // mouseenter/mouseleave don't re-fire when moving across the link's children.
       a.addEventListener("mouseenter", async (e) => {
+        hovered = true;
         if (hideTimeout) {
           clearTimeout(hideTimeout);
           hideTimeout = null;
         }
 
         const previewOnHover = (await Storage.get("preview-on-hover")) ?? true;
+        const delaySecs = (await Storage.get("preview-on-hover-delay")) ?? 1;
+        if (!hovered) {
+          // The pointer left the link while settings were being read.
+          return;
+        }
+        clearTimeout(showTimeout);
+
         if (previewOnHover) {
           // Preview directly on hover, no tooltip interaction needed.
-          const delaySecs = (await Storage.get("preview-on-hover-delay")) ?? 1;
           showTimeout = setTimeout(() => {
             this.hideAll();
             this.sendMessage("preview", a.href);
@@ -144,6 +160,7 @@ export class Floatie {
       });
 
       a.addEventListener("mouseleave", () => {
+        hovered = false;
         if (showTimeout) {
           clearTimeout(showTimeout);
           showTimeout = null;
@@ -162,17 +179,20 @@ export class Floatie {
    * events are Safari-only), so press-and-hold is the closest mapping; the
    * real force event is still wired up opportunistically in case it exists.
    */
-  setupDeepClick(a: HTMLAnchorElement) {
+  setupDeepClick(a: HTMLAnchorElement, onFire: () => void) {
     let pressTimer: any = null;
+    let pressed = false;
     let previewFired = false;
 
     const fire = () => {
       previewFired = true;
+      onFire();
       this.hideAll();
       this.sendMessage("preview", a.href);
     };
 
     const cancel = () => {
+      pressed = false;
       if (pressTimer) {
         clearTimeout(pressTimer);
         pressTimer = null;
@@ -183,20 +203,33 @@ export class Floatie {
       if (e.button !== 0) {
         return;
       }
+      pressed = true;
+      previewFired = false;
+      const deepClick = (await Storage.get("deep-click-preview")) ?? true;
+      if (!deepClick || !pressed) {
+        // Disabled, or released/left while settings were being read.
+        return;
+      }
+      pressTimer = setTimeout(fire, 450);
+    });
+    a.addEventListener("pointerup", cancel);
+    // Releasing away from the link produces no anchor click to swallow, so
+    // previewFired must be cleared too or a later normal click would be eaten.
+    a.addEventListener("pointerleave", () => {
+      cancel();
+      previewFired = false;
+    });
+    a.addEventListener("pointercancel", () => {
+      cancel();
+      previewFired = false;
+    });
+
+    // Real Force Touch, where the browser exposes it (Safari-only today).
+    a.addEventListener("webkitmouseforcedown", async () => {
       const deepClick = (await Storage.get("deep-click-preview")) ?? true;
       if (!deepClick) {
         return;
       }
-      previewFired = false;
-      pressTimer = setTimeout(fire, 450);
-    });
-    a.addEventListener("pointerup", cancel);
-    a.addEventListener("pointerleave", cancel);
-    a.addEventListener("pointercancel", cancel);
-
-    // Real Force Touch, where the browser exposes it (Safari-only today).
-    a.addEventListener("webkitmouseforcedown", (e: Event) => {
-      e.preventDefault();
       cancel();
       fire();
     });
