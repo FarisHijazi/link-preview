@@ -202,6 +202,12 @@ export class Previewr {
 
   async previewUrl(url: URL) {
     this.logger.log("#previewUrl: ", url);
+    // If the dialog is mid close-animation, finish closing it now so the new
+    // preview gets a fresh dialog instead of being destroyed by the pending
+    // forced close.
+    if ((this.dialog as any)?.spClosing) {
+      this.dialog.close(true);
+    }
     this.url = url;
 
     const winboxOptions = await this.getWinboxOptions(url);
@@ -371,7 +377,8 @@ export class Previewr {
           }
           dialog.spClosing = true;
           dialog.addClass("sp-glance-out");
-          setTimeout(() => dialog.close(true), 170);
+          // dialog.dom is nulled if something else already force-closed it.
+          setTimeout(() => dialog.dom && dialog.close(true), 170);
           return true;
         }
         this.navStack = [];
