@@ -103,7 +103,6 @@ export class Floatie {
   setupLinkPreviews() {
     const anchors = document.querySelectorAll("a");
     let showTimeout: any = null;
-    let autoPreviewTimeout: any = null;
     let hideTimeout: any = null;
     anchors.forEach((a: HTMLAnchorElement) => {
       if (!this.isGoodUrl(a.href)) {
@@ -117,44 +116,35 @@ export class Floatie {
 
       // TODO: check if computed display is 'none', i.e. link is hidden.
 
-      a.addEventListener("mouseover", (e) => {
+      // mouseenter/mouseleave don't re-fire when moving across the link's children.
+      a.addEventListener("mouseenter", async (e) => {
         if (hideTimeout) {
           clearTimeout(hideTimeout);
           hideTimeout = null;
         }
 
-        showTimeout = setTimeout(async () => {
-          const previewOnHover =
-            (await Storage.get("preview-on-hover")) ?? false;
+        const previewOnHover = (await Storage.get("preview-on-hover")) ?? true;
+        if (previewOnHover) {
+          // Preview directly on hover, no tooltip interaction needed.
+          const delaySecs = (await Storage.get("preview-on-hover-delay")) ?? 1;
+          showTimeout = setTimeout(() => {
+            this.hideAll();
+            this.sendMessage("preview", a.href);
+          }, delaySecs * 1000);
+          return;
+        }
 
+        showTimeout = setTimeout(() => {
           this.showActions(a.getBoundingClientRect(), e, a.href, [
             this.previewButton,
           ]);
-
-          if (previewOnHover) {
-            const timeout = (await Storage.get("preview-on-hover-delay")) ?? 3;
-            // Slowly hide the preview button via opacity over a duration of timeout.
-            this.container.classList.add("hide-" + timeout);
-            autoPreviewTimeout = setTimeout(() => {
-              this.container.className = "";
-
-              this.container.style.display = "none";
-              this.sendMessage("preview", a.href);
-            }, timeout * 1000);
-          }
         }, 500);
       });
 
-      a.addEventListener("mouseout", () => {
+      a.addEventListener("mouseleave", () => {
         if (showTimeout) {
           clearTimeout(showTimeout);
           showTimeout = null;
-        }
-        if (autoPreviewTimeout) {
-          clearTimeout(autoPreviewTimeout);
-          this.container.className = "";
-          this.container.style.display = "none";
-          autoPreviewTimeout = null;
         }
         hideTimeout = setTimeout(() => {
           this.hideAll();
