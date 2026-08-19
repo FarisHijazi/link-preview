@@ -21,6 +21,8 @@ export class Floatie {
   isCopyActionEnabled = false;
   showTimeout?: number;
   logger = new Logger(this);
+  allowSameSite = false;
+  attachedAnchors = new WeakSet<HTMLAnchorElement>();
 
   constructor() {
     const markup = `
@@ -100,20 +102,51 @@ export class Floatie {
    * TODO: On search pages, only wire for search results.
    * On normal pages, display floatie on all links.
    */
-  setupLinkPreviews() {
-    const anchors = document.querySelectorAll("a");
-    anchors.forEach((a: HTMLAnchorElement) => {
-      if (!this.isGoodUrl(a.href)) {
-        return;
+  async setupLinkPreviews() {
+    this.allowSameSite = (await Storage.get("preview-same-site-links")) ?? true;
+
+    document.querySelectorAll("a").forEach((a: HTMLAnchorElement) => {
+      this.attachLinkPreview(a);
+    });
+
+    // Apps like Basecamp render most links after load (SPA navigation, lazy
+    // lists); watch the DOM and wire up links as they appear.
+    const observer = new MutationObserver((mutations) => {
+      for (const mutation of mutations) {
+        for (const node of mutation.addedNodes) {
+          if (!(node instanceof HTMLElement)) {
+            continue;
+          }
+          if (node instanceof HTMLAnchorElement) {
+            this.attachLinkPreview(node);
+          }
+          node
+            .querySelectorAll("a")
+            .forEach((a: HTMLAnchorElement) => this.attachLinkPreview(a));
+        }
       }
+    });
+    observer.observe(document.body, { childList: true, subtree: true });
+  }
 
-      if (!a.innerText.trim()) {
-        // There is no text, we may be highlighting an image.
-        return;
-      }
+  attachLinkPreview(a: HTMLAnchorElement) {
+    if (this.attachedAnchors.has(a)) {
+      return;
+    }
 
-      // TODO: check if computed display is 'none', i.e. link is hidden.
+    if (!this.isGoodUrl(a.href)) {
+      return;
+    }
 
+    if (!a.innerText.trim() && !a.querySelector("img,svg")) {
+      // Neither text nor an image inside — nothing visible to hover.
+      return;
+    }
+
+    // TODO: check if computed display is 'none', i.e. link is hidden.
+    this.attachedAnchors.add(a);
+
+    {
       // Timers are per-anchor so rapid movement across links can't orphan them.
       let showTimeout: any = null;
       let hideTimeout: any = null;
@@ -169,7 +202,7 @@ export class Floatie {
           this.hideAll();
         }, 2000);
       });
-    });
+    }
   }
 
   /*
@@ -327,9 +360,14 @@ export class Floatie {
     }
 
     if (url.hostname === window.location.hostname) {
-      // Don't preview URLs of the same origin, not useful and potentially introduces bugs to the page.
-      // TODO: Make this configurable.
-      return false;
+      if (!this.allowSameSite) {
+        return false;
+      }
+      // Even with same-site previews on, never preview the page itself
+      // (self-links and #fragment anchors).
+      if (url.href.split("#")[0] === window.location.href.split("#")[0]) {
+        return false;
+      }
     }
 
     // TODO: investigate potential issues with displaying https over http and vice versa.
