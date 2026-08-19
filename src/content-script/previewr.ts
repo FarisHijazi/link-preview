@@ -166,6 +166,13 @@ export class Previewr {
         this.dialog.setIcon(
           this.headerIconUrlBase + new URL(message.href!).hostname,
         );
+        // Keep the tracked URL in sync with redirects and in-iframe
+        // navigation, so open-on-click opens what is actually displayed.
+        try {
+          this.url = new URL(message.href!);
+        } catch (e) {
+          this.logger.error(e);
+        }
       }
     } else if (message.action === "navigate") {
       urlStr = message.href;
@@ -310,11 +317,17 @@ export class Previewr {
    * interacting with it — like Safari's Glance preview.
    */
   async updateOpenOnClickOverlay() {
-    const openOnClick = (await Storage.get("click-preview-to-open")) ?? false;
-    if (!openOnClick || !this.dialog) {
+    if (!this.dialog) {
       return;
     }
-    if (this.dialog.body.querySelector(".sp-open-on-click")) {
+    const openOnClick = (await Storage.get("click-preview-to-open")) ?? false;
+    const existing = this.dialog.body.querySelector(".sp-open-on-click");
+    if (!openOnClick) {
+      // The option may have been turned off while a dialog is open/reused.
+      existing?.remove();
+      return;
+    }
+    if (existing) {
       return;
     }
     const overlay = document.createElement("div");
