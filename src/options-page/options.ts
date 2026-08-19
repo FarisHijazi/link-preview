@@ -97,6 +97,14 @@ const configOptions: Config[] = [
     max: "5",
   },
   {
+    id: "click-preview-to-open",
+    type: "switch",
+    title: "Click Preview to Open",
+    description:
+      "Clicking anywhere on the preview opens the page in a new tab instead of interacting with it, like Safari's Glance preview.",
+    default_value: false,
+  },
+  {
     id: "blocked-sites",
     type: "textarea",
     title: "Disabled on Websites",
