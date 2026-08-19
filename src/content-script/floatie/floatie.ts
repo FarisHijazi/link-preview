@@ -116,6 +116,8 @@ export class Floatie {
 
       // TODO: check if computed display is 'none', i.e. link is hidden.
 
+      this.setupDeepClick(a);
+
       // mouseenter/mouseleave don't re-fire when moving across the link's children.
       a.addEventListener("mouseenter", async (e) => {
         if (hideTimeout) {
@@ -151,6 +153,66 @@ export class Floatie {
         }, 2000);
       });
     });
+  }
+
+  /*
+   * Approximates macOS Force Touch ("deep click") on a link: press and hold
+   * for a moment to preview it immediately, instead of clicking through.
+   * Chromium does not expose the trackpad force sensor (the webkitmouseforce*
+   * events are Safari-only), so press-and-hold is the closest mapping; the
+   * real force event is still wired up opportunistically in case it exists.
+   */
+  setupDeepClick(a: HTMLAnchorElement) {
+    let pressTimer: any = null;
+    let previewFired = false;
+
+    const fire = () => {
+      previewFired = true;
+      this.hideAll();
+      this.sendMessage("preview", a.href);
+    };
+
+    const cancel = () => {
+      if (pressTimer) {
+        clearTimeout(pressTimer);
+        pressTimer = null;
+      }
+    };
+
+    a.addEventListener("pointerdown", async (e: PointerEvent) => {
+      if (e.button !== 0) {
+        return;
+      }
+      const deepClick = (await Storage.get("deep-click-preview")) ?? true;
+      if (!deepClick) {
+        return;
+      }
+      previewFired = false;
+      pressTimer = setTimeout(fire, 450);
+    });
+    a.addEventListener("pointerup", cancel);
+    a.addEventListener("pointerleave", cancel);
+    a.addEventListener("pointercancel", cancel);
+
+    // Real Force Touch, where the browser exposes it (Safari-only today).
+    a.addEventListener("webkitmouseforcedown", (e: Event) => {
+      e.preventDefault();
+      cancel();
+      fire();
+    });
+
+    // Swallow the click that ends a deep-click so the link doesn't navigate.
+    a.addEventListener(
+      "click",
+      (e) => {
+        if (previewFired) {
+          e.preventDefault();
+          e.stopImmediatePropagation();
+          previewFired = false;
+        }
+      },
+      true,
+    );
   }
 
   stopListening(): void {

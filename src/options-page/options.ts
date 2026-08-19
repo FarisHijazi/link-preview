@@ -97,6 +97,14 @@ const configOptions: Config[] = [
     max: "5",
   },
   {
+    id: "deep-click-preview",
+    type: "switch",
+    title: "Deep Click to Preview",
+    description:
+      "Press and hold a link (like a macOS deep click) to preview it instantly instead of navigating.",
+    default_value: true,
+  },
+  {
     id: "blocked-sites",
     type: "textarea",
     title: "Disabled on Websites",
