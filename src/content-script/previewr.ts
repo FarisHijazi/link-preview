@@ -89,11 +89,17 @@ export class Previewr {
     }
   };
 
-  // Close the dialog preview on click outside of the preview panel, when automatically-hide-previews is enabled.
+  // Close the dialog preview on click outside of the preview panel.
   async clickHandler(e) {
     const autoHide =
       (await Storage.get("automatically-hide-previews")) ?? false;
-    if (autoHide && this.dialog && !this.dialog.dom.contains(e.target)) {
+    const closeOnClickOutside =
+      (await Storage.get("close-on-click-outside")) ?? true;
+    if (
+      (autoHide || closeOnClickOutside) &&
+      this.dialog &&
+      !this.dialog.dom.contains(e.target)
+    ) {
       this.dialog.close();
     }
   }
@@ -166,6 +172,13 @@ export class Previewr {
         this.dialog.setIcon(
           this.headerIconUrlBase + new URL(message.href!).hostname,
         );
+        // Keep the tracked URL in sync with redirects and in-iframe
+        // navigation, so open-on-click opens what is actually displayed.
+        try {
+          this.url = new URL(message.href!);
+        } catch (e) {
+          this.logger.error(e);
+        }
       }
     } else if (message.action === "navigate") {
       urlStr = message.href;
@@ -202,6 +215,12 @@ export class Previewr {
 
   async previewUrl(url: URL) {
     this.logger.log("#previewUrl: ", url);
+    // If the dialog is mid close-animation, finish closing it now so the new
+    // preview gets a fresh dialog instead of being destroyed by the pending
+    // forced close.
+    if ((this.dialog as any)?.spClosing) {
+      this.dialog.close(true);
+    }
     this.url = url;
 
     const winboxOptions = await this.getWinboxOptions(url);
@@ -249,6 +268,8 @@ export class Previewr {
       this.dialog.setTitle(url.hostname);
       this.dialog.setIcon(this.headerIconUrlBase + url.hostname);
     }
+
+    await this.updateOpenOnClickOverlay();
 
     this.dialog.removeControl("nav-back");
     if (this.navStack.length > 0) {
@@ -302,6 +323,35 @@ export class Previewr {
     });
   }
 
+  /*
+   * When enabled, a transparent overlay covers the preview body so that a
+   * click anywhere on the preview opens the page in a new tab instead of
+   * interacting with it — like Safari's Glance preview.
+   */
+  async updateOpenOnClickOverlay() {
+    if (!this.dialog) {
+      return;
+    }
+    const openOnClick = (await Storage.get("click-preview-to-open")) ?? false;
+    const existing = this.dialog.body.querySelector(".sp-open-on-click");
+    if (!openOnClick) {
+      // The option may have been turned off while a dialog is open/reused.
+      existing?.remove();
+      return;
+    }
+    if (existing) {
+      return;
+    }
+    const overlay = document.createElement("div");
+    overlay.className = "sp-open-on-click";
+    overlay.title = "Open in New Tab";
+    overlay.addEventListener("click", () => {
+      window.open(this.url, "_blank");
+      this.dialog?.close();
+    });
+    this.dialog.body.appendChild(overlay);
+  }
+
   navBack() {
     const lastUrl = this.navStack.pop();
     if (lastUrl) {
@@ -348,18 +398,33 @@ export class Previewr {
       height = "40%";
       top = "500px";
     }
+    const glanceAnimation = (await Storage.get("glance-animation")) ?? true;
     let options: any = {
       icon: this.headerIconUrlBase + url.hostname,
       y: top,
       width: width,
       height: height,
-      class: ["no-max", "no-full"],
+      class: glanceAnimation
+        ? ["no-max", "no-full", "sp-glance"]
+        : ["no-max", "no-full"],
       index: await this.getMaxZIndex(),
       hidden: false,
       shadowel: "search-preview-window",
       framename: iframeName,
 
-      onclose: () => {
+      onclose: (force?: boolean) => {
+        // Play the close animation first, then close for real (force=true).
+        if (!force && glanceAnimation && this.dialog) {
+          const dialog: any = this.dialog;
+          if (dialog.spClosing) {
+            return true;
+          }
+          dialog.spClosing = true;
+          dialog.addClass("sp-glance-out");
+          // dialog.dom is nulled if something else already force-closed it.
+          setTimeout(() => dialog.dom && dialog.close(true), 170);
+          return true;
+        }
         this.navStack = [];
         this.url = undefined;
         this.dialog = undefined;
