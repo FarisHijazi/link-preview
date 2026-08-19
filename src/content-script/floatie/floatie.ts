@@ -102,9 +102,6 @@ export class Floatie {
    */
   setupLinkPreviews() {
     const anchors = document.querySelectorAll("a");
-    let showTimeout: any = null;
-    let autoPreviewTimeout: any = null;
-    let hideTimeout: any = null;
     anchors.forEach((a: HTMLAnchorElement) => {
       if (!this.isGoodUrl(a.href)) {
         return;
@@ -117,44 +114,48 @@ export class Floatie {
 
       // TODO: check if computed display is 'none', i.e. link is hidden.
 
-      a.addEventListener("mouseover", (e) => {
+      // Timers are per-anchor so rapid movement across links can't orphan them.
+      let showTimeout: any = null;
+      let hideTimeout: any = null;
+      let hovered = false;
+
+      // mouseenter/mouseleave don't re-fire when moving across the link's children.
+      a.addEventListener("mouseenter", async (e) => {
+        hovered = true;
         if (hideTimeout) {
           clearTimeout(hideTimeout);
           hideTimeout = null;
         }
 
-        showTimeout = setTimeout(async () => {
-          const previewOnHover =
-            (await Storage.get("preview-on-hover")) ?? false;
+        const previewOnHover = (await Storage.get("preview-on-hover")) ?? true;
+        const delaySecs = (await Storage.get("preview-on-hover-delay")) ?? 1;
+        if (!hovered) {
+          // The pointer left the link while settings were being read.
+          return;
+        }
+        clearTimeout(showTimeout);
 
+        if (previewOnHover) {
+          // Preview directly on hover, no tooltip interaction needed.
+          showTimeout = setTimeout(() => {
+            this.hideAll();
+            this.sendMessage("preview", a.href);
+          }, delaySecs * 1000);
+          return;
+        }
+
+        showTimeout = setTimeout(() => {
           this.showActions(a.getBoundingClientRect(), e, a.href, [
             this.previewButton,
           ]);
-
-          if (previewOnHover) {
-            const timeout = (await Storage.get("preview-on-hover-delay")) ?? 3;
-            // Slowly hide the preview button via opacity over a duration of timeout.
-            this.container.classList.add("hide-" + timeout);
-            autoPreviewTimeout = setTimeout(() => {
-              this.container.className = "";
-
-              this.container.style.display = "none";
-              this.sendMessage("preview", a.href);
-            }, timeout * 1000);
-          }
         }, 500);
       });
 
-      a.addEventListener("mouseout", () => {
+      a.addEventListener("mouseleave", () => {
+        hovered = false;
         if (showTimeout) {
           clearTimeout(showTimeout);
           showTimeout = null;
-        }
-        if (autoPreviewTimeout) {
-          clearTimeout(autoPreviewTimeout);
-          this.container.className = "";
-          this.container.style.display = "none";
-          autoPreviewTimeout = null;
         }
         hideTimeout = setTimeout(() => {
           this.hideAll();

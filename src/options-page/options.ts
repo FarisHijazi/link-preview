@@ -82,18 +82,18 @@ const configOptions: Config[] = [
     type: "switch",
     title: "Automatic Preview on Hover",
     description:
-      "No need to click on tooltip button, auto show preview on hover.",
-    default_value: false,
+      "Open the preview directly when hovering a link — no tooltip, no click needed.",
+    default_value: true,
   },
   {
     id: "preview-on-hover-delay",
     type: "range",
     title: i18n("Preview-on-Hover Delay"),
     description: i18n(
-      "When automatic preview on hover is enabled, this is the delay before the preview is shown.",
+      "When automatic preview on hover is enabled, this is the delay (in seconds) before the preview is shown.",
     ),
-    default_value: 3,
-    min: "1",
+    default_value: 1,
+    min: "0",
     max: "5",
   },
   {
