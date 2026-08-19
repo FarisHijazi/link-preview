@@ -3,6 +3,35 @@
   overflow: hidden;
 }
 
+/* Safari-Glance-style open/close animation (the "glance-animation" option). */
+.winbox.sp-glance {
+  animation: sp-glance-in 280ms cubic-bezier(0.34, 1.2, 0.64, 1);
+  box-shadow: 0 24px 70px rgba(0, 0, 0, 0.35);
+}
+
+.winbox.sp-glance-out {
+  animation: sp-glance-out 170ms ease-in forwards;
+  pointer-events: none;
+}
+
+@keyframes sp-glance-in {
+  from {
+    opacity: 0;
+    transform: scale(0.92) translateY(16px);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
+}
+
+@keyframes sp-glance-out {
+  to {
+    opacity: 0;
+    transform: scale(0.95) translateY(12px);
+  }
+}
+
 .nav-back,
 .open-options {
   background-size: 20px auto;
