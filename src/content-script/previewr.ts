@@ -166,6 +166,13 @@ export class Previewr {
         this.dialog.setIcon(
           this.headerIconUrlBase + new URL(message.href!).hostname,
         );
+        // Keep the tracked URL in sync with redirects and in-iframe
+        // navigation, so open-on-click opens what is actually displayed.
+        try {
+          this.url = new URL(message.href!);
+        } catch (e) {
+          this.logger.error(e);
+        }
       }
     } else if (message.action === "navigate") {
       urlStr = message.href;
@@ -250,6 +257,8 @@ export class Previewr {
       this.dialog.setIcon(this.headerIconUrlBase + url.hostname);
     }
 
+    await this.updateOpenOnClickOverlay();
+
     this.dialog.removeControl("nav-back");
     if (this.navStack.length > 0) {
       this.dialog.addControl({
@@ -300,6 +309,35 @@ export class Previewr {
         });
       }
     });
+  }
+
+  /*
+   * When enabled, a transparent overlay covers the preview body so that a
+   * click anywhere on the preview opens the page in a new tab instead of
+   * interacting with it — like Safari's Glance preview.
+   */
+  async updateOpenOnClickOverlay() {
+    if (!this.dialog) {
+      return;
+    }
+    const openOnClick = (await Storage.get("click-preview-to-open")) ?? false;
+    const existing = this.dialog.body.querySelector(".sp-open-on-click");
+    if (!openOnClick) {
+      // The option may have been turned off while a dialog is open/reused.
+      existing?.remove();
+      return;
+    }
+    if (existing) {
+      return;
+    }
+    const overlay = document.createElement("div");
+    overlay.className = "sp-open-on-click";
+    overlay.title = "Open in New Tab";
+    overlay.addEventListener("click", () => {
+      window.open(this.url, "_blank");
+      this.dialog?.close();
+    });
+    this.dialog.body.appendChild(overlay);
   }
 
   navBack() {
