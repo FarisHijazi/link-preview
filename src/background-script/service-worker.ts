@@ -33,6 +33,14 @@ const onMessage = (
     return;
   }
 
+  // Opened here rather than with window.open in the page: the click that asks
+  // for this happens inside the preview's cross-origin iframe, so the parent
+  // page has no user activation and a popup blocker would eat window.open.
+  if (message && message.action === "open_tab" && message.url) {
+    chrome.tabs.create({ url: message.url });
+    return;
+  }
+
   // For now, bounce-back message to the content script.
   chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
     if (tabs.length == 0) {
