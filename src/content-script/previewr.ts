@@ -33,6 +33,10 @@ export class Previewr {
   dialog?: WinBox;
   isVisible = false;
   url?: URL;
+  // Where the cursor was when the preview was requested (viewport coords).
+  previewPoint = { x: 0, y: 0 };
+  // What opened the current preview: "hover" or "click".
+  previewTrigger: "hover" | "click" = "hover";
   navStack: URL[] = [];
   displayReaderMode = false;
   isDemo = false;
@@ -146,6 +150,22 @@ export class Previewr {
     let urlStr;
     if (message.mode === "demo") {
       this.isDemo = true;
+    }
+
+    if (message.point) {
+      this.previewPoint = message.point;
+    }
+    if (message.trigger) {
+      this.previewTrigger = message.trigger;
+    }
+
+    // Hovering away only dismisses a preview that hovering opened; one opened
+    // by a click stays until it is clicked away.
+    if (message.action === "close-if-hover") {
+      if (this.previewTrigger === "hover") {
+        this.dialog?.close();
+      }
+      return;
     }
 
     if (message.action === "copy") {
@@ -264,6 +284,8 @@ export class Previewr {
     } else {
       this.logger.debug("restoring dialog");
       this.dialog.restore();
+      // Each new peek opens where the cursor is, including a reused dialog.
+      this.dialog.move(winboxOptions.x, winboxOptions.y);
       this.dialog.setUrl(url.href);
       this.dialog.setTitle(url.hostname);
       this.dialog.setIcon(this.headerIconUrlBase + url.hostname);
@@ -383,25 +405,59 @@ export class Previewr {
     });
   }
 
-  async getWinboxOptions(url: URL, point?: DOMRect) {
+  /*
+   * Places the panel at the cursor, the way Safari's Glance opens where you
+   * are looking rather than at a fixed edge of the screen. Offsets down-right
+   * of the pointer, flips to the other side when that would overflow, and
+   * clamps so the panel is never partly off-screen.
+   */
+  positionAtPointer(widthPx: number, heightPx: number) {
+    const margin = 12;
+    const gap = 16;
+
+    // Along one axis: sit just after the pointer, else just before it, else —
+    // when the panel is too big to clear the pointer either way — straddle it,
+    // so the peek still appears where you are looking instead of snapping to
+    // an edge. Always clamped fully on-screen.
+    const place = (at: number, size: number, viewport: number) => {
+      const after = at + gap;
+      if (after + size <= viewport - margin) {
+        return after;
+      }
+      const before = at - size - gap;
+      if (before >= margin) {
+        return before;
+      }
+      const straddle = at - size / 2;
+      return Math.max(margin, Math.min(straddle, viewport - size - margin));
+    };
+
+    return {
+      x: place(this.previewPoint.x, widthPx, window.innerWidth),
+      y: place(this.previewPoint.y, heightPx, window.innerHeight),
+    };
+  }
+
+  async getWinboxOptions(url: URL) {
     // Set width and height from options if present.
-    let width = ((await Storage.get("previewr-width")) ?? "55") + "%";
-    let height = ((await Storage.get("previewr-height")) ?? "80") + "%";
-    let ltr = (await Storage.get("previewr-position")) ?? "right";
+    let widthPct = (await Storage.get("previewr-width")) ?? 45;
+    let heightPct = (await Storage.get("previewr-height")) ?? 60;
 
-    // Leave space on top for headers/navigation.
-    let top = "80px";
-
-    // In demo mode, use small width and height, and push down previewr.
+    // In demo mode, use small width and height.
     if (this.isDemo) {
-      width = "45%";
-      height = "40%";
-      top = "500px";
+      widthPct = 45;
+      heightPct = 40;
     }
+    const widthPx = (window.innerWidth * Number(widthPct)) / 100;
+    const heightPx = (window.innerHeight * Number(heightPct)) / 100;
+    const width = widthPct + "%";
+    const height = heightPct + "%";
+    const at = this.positionAtPointer(widthPx, heightPx);
     const glanceAnimation = (await Storage.get("glance-animation")) ?? true;
     let options: any = {
       icon: this.headerIconUrlBase + url.hostname,
-      y: top,
+      x: at.x,
+      y: at.y,
       width: width,
       height: height,
       class: glanceAnimation
@@ -430,14 +486,6 @@ export class Previewr {
         this.dialog = undefined;
       },
     };
-
-    if (ltr === "right") {
-      options.x = "right";
-      options.right = 10;
-    } else {
-      options.x = "left";
-      options.left = 10;
-    }
 
     return options;
   }
