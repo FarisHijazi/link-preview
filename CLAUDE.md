@@ -22,5 +22,12 @@ Load `build/chrome-dev/` via chrome://extensions → "Load unpacked" (Developer 
 - Entry points and copied assets are listed in `build-tools/config.json`.
 - `src/manifest.json` keys prefixed `__` are stripped from the generated manifest
   (`__chrome__`/`__firefox__` prefixes select per-browser values).
+- **Link previews are wired by event delegation, deliberately.** `floatie.ts` installs one
+  delegated listener per event on `document` and decides whether a link is previewable when
+  the pointer arrives (`anchorFromEvent` + `isPreviewableLink`). Do not go back to attaching
+  listeners per anchor or scanning with a `MutationObserver`: judging eligibility at insertion
+  time silently and permanently skips anchors that SPAs render empty and fill in later, or
+  give a real `href` after hydration. Resolving the anchor via the event's composed path is
+  also what makes links inside shadow DOM work.
 - User-facing settings are declared in `src/options-page/options.ts` and read at runtime
   with `Storage.get(<id>)` (chrome.storage-backed, defaults live at the call sites).
