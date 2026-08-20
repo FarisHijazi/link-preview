@@ -22,6 +22,7 @@ export class Floatie {
   showTimeout?: number;
   logger = new Logger(this);
   allowSameSite = true;
+  altClickPreview = true;
   hoverAnchor: HTMLAnchorElement | null = null;
   hoverShowTimeout?: any;
   hoverHideTimeout?: any;
@@ -111,10 +112,42 @@ export class Floatie {
     Storage.get("preview-same-site-links").then((v) => {
       this.allowSameSite = v ?? true;
     });
+    Storage.get("alt-click-preview").then((v) => {
+      this.altClickPreview = v ?? true;
+    });
 
     // mouseover bubbles (mouseenter does not), so it can be delegated.
     document.addEventListener("mouseover", (e) => this.onLinkHover(e), true);
     this.setupDeepClick();
+    this.setupAltClick();
+  }
+
+  /*
+   * Option/Alt + click previews a link. The setting is read from a cached
+   * field rather than awaited here: Chrome maps Alt+click to "download linked
+   * file", and suppressing that has to happen synchronously in the handler —
+   * an await would let the download start. The cache is refreshed on hover,
+   * which always precedes a click on the same link.
+   */
+  setupAltClick() {
+    document.addEventListener(
+      "click",
+      (e: MouseEvent) => {
+        if (!e.altKey || !this.altClickPreview) {
+          return;
+        }
+        const a = this.anchorFromEvent(e);
+        if (!this.isPreviewableLink(a)) {
+          return;
+        }
+        e.preventDefault();
+        e.stopImmediatePropagation();
+        clearTimeout(this.hoverShowTimeout);
+        this.hideAll();
+        this.sendMessage("preview", a.href);
+      },
+      true,
+    );
   }
 
   /*
@@ -166,6 +199,7 @@ export class Floatie {
     const previewOnHover = (await Storage.get("preview-on-hover")) ?? true;
     const delaySecs = (await Storage.get("preview-on-hover-delay")) ?? 1;
     this.allowSameSite = (await Storage.get("preview-same-site-links")) ?? true;
+    this.altClickPreview = (await Storage.get("alt-click-preview")) ?? true;
     if (this.hoverAnchor !== a) {
       // The pointer moved on while settings were being read.
       return;
