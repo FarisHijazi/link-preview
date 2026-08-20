@@ -32,14 +32,6 @@
   }
 }
 
-/* Click anywhere on the preview to open it (the "click-preview-to-open" option). */
-.winbox .sp-open-on-click {
-  position: absolute;
-  inset: 0;
-  z-index: 2;
-  cursor: pointer;
-}
-
 .nav-back,
 .open-options {
   background-size: 20px auto;

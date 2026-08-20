@@ -62,6 +62,7 @@ export class Previewr {
 
     this.listenForCspError();
     this.listenForWindowMessages();
+    this.listenForPreviewClick();
     document.addEventListener("keydown", this.onEscHandler);
     document.addEventListener("click", (e) => this.clickHandler(e));
     document.addEventListener("scroll", (e) => this.handleScroll(e));
@@ -291,8 +292,6 @@ export class Previewr {
       this.dialog.setIcon(this.headerIconUrlBase + url.hostname);
     }
 
-    await this.updateOpenOnClickOverlay();
-
     this.dialog.removeControl("nav-back");
     if (this.navStack.length > 0) {
       this.dialog.addControl({
@@ -346,32 +345,38 @@ export class Previewr {
   }
 
   /*
-   * When enabled, a transparent overlay covers the preview body so that a
-   * click anywhere on the preview opens the page in a new tab instead of
-   * interacting with it — like Safari's Glance preview.
+   * "Click the preview to open it" without covering the preview.
+   *
+   * This used to lay a transparent overlay over the body, which caught the
+   * click but also swallowed the scroll wheel, making the preview unusable
+   * while the option was on. Clicks inside a cross-origin iframe are instead
+   * detected through focus: clicking into the iframe blurs the parent window
+   * and makes the iframe document.activeElement. Scrolling moves no focus, so
+   * the wheel reaches the iframe untouched.
    */
-  async updateOpenOnClickOverlay() {
-    if (!this.dialog) {
-      return;
-    }
-    const openOnClick = (await Storage.get("click-preview-to-open")) ?? false;
-    const existing = this.dialog.body.querySelector(".sp-open-on-click");
-    if (!openOnClick) {
-      // The option may have been turned off while a dialog is open/reused.
-      existing?.remove();
-      return;
-    }
-    if (existing) {
-      return;
-    }
-    const overlay = document.createElement("div");
-    overlay.className = "sp-open-on-click";
-    overlay.title = "Open in New Tab";
-    overlay.addEventListener("click", () => {
-      window.open(this.url, "_blank");
-      this.dialog?.close();
+  listenForPreviewClick() {
+    window.addEventListener("blur", () => {
+      // activeElement updates after the blur event dispatches.
+      setTimeout(async () => {
+        const iframe = this.dialog?.body?.querySelector("iframe");
+        if (!iframe || document.activeElement !== iframe) {
+          return;
+        }
+        const openOnClick = (await Storage.get("click-preview-to-open")) ?? false;
+        if (!openOnClick) {
+          return;
+        }
+        // Opened via the service worker: this has no user activation in the
+        // parent page, so window.open would be blocked as a popup.
+        chrome.runtime.sendMessage({
+          action: "open_tab",
+          url: this.url?.href,
+        });
+        this.dialog?.close();
+        // Take focus back so the next preview can be detected the same way.
+        window.focus();
+      }, 0);
     });
-    this.dialog.body.appendChild(overlay);
   }
 
   navBack() {
