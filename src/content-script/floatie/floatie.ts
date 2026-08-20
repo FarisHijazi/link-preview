@@ -21,8 +21,10 @@ export class Floatie {
   isCopyActionEnabled = false;
   showTimeout?: number;
   logger = new Logger(this);
-  allowSameSite = false;
-  attachedAnchors = new WeakSet<HTMLAnchorElement>();
+  allowSameSite = true;
+  hoverAnchor: HTMLAnchorElement | null = null;
+  hoverShowTimeout?: any;
+  hoverHideTimeout?: any;
 
   constructor() {
     const markup = `
@@ -99,110 +101,90 @@ export class Floatie {
   }
 
   /*
-   * TODO: On search pages, only wire for search results.
-   * On normal pages, display floatie on all links.
+   * Link previews are wired with ONE delegated listener per event rather than
+   * listeners on every anchor. Eligibility is judged when the pointer arrives,
+   * not when the anchor is created, which is what makes SPA links work: an
+   * anchor rendered empty and filled in later, or given its real href after
+   * hydration, is simply read at hover time when it is final.
    */
-  async setupLinkPreviews() {
-    this.allowSameSite = (await Storage.get("preview-same-site-links")) ?? true;
-
-    document.querySelectorAll("a").forEach((a: HTMLAnchorElement) => {
-      this.attachLinkPreview(a);
+  setupLinkPreviews() {
+    Storage.get("preview-same-site-links").then((v) => {
+      this.allowSameSite = v ?? true;
     });
 
-    // Apps like Basecamp render most links after load (SPA navigation, lazy
-    // lists); watch the DOM and wire up links as they appear.
-    const observer = new MutationObserver((mutations) => {
-      for (const mutation of mutations) {
-        for (const node of mutation.addedNodes) {
-          if (!(node instanceof HTMLElement)) {
-            continue;
-          }
-          if (node instanceof HTMLAnchorElement) {
-            this.attachLinkPreview(node);
-          }
-          node
-            .querySelectorAll("a")
-            .forEach((a: HTMLAnchorElement) => this.attachLinkPreview(a));
-        }
-      }
-    });
-    observer.observe(document.body, { childList: true, subtree: true });
+    // mouseover bubbles (mouseenter does not), so it can be delegated.
+    document.addEventListener("mouseover", (e) => this.onLinkHover(e), true);
+    this.setupDeepClick();
   }
 
-  attachLinkPreview(a: HTMLAnchorElement) {
-    if (this.attachedAnchors.has(a)) {
+  /*
+   * Resolves the anchor under the pointer. Uses the composed path so links
+   * inside shadow DOM are found too — the event target is retargeted to the
+   * shadow host by the time it reaches the document.
+   */
+  anchorFromEvent(e: Event): HTMLAnchorElement | null {
+    const path: EventTarget[] = e.composedPath ? e.composedPath() : [];
+    for (const node of path) {
+      if (node instanceof HTMLAnchorElement) {
+        return node;
+      }
+    }
+    let el: any = e.target;
+    while (el) {
+      if (el instanceof HTMLAnchorElement) {
+        return el;
+      }
+      el = el.parentElement ?? el.host;
+    }
+    return null;
+  }
+
+  // Is there a link here worth previewing, and something visible to hover?
+  isPreviewableLink(a: HTMLAnchorElement | null): a is HTMLAnchorElement {
+    if (!a || !this.isGoodUrl(a.href)) {
+      return false;
+    }
+    // textContent avoids the forced reflow innerText would cost on every hover.
+    return !!a.textContent?.trim() || !!a.querySelector("img,svg");
+  }
+
+  async onLinkHover(e: MouseEvent) {
+    const a = this.anchorFromEvent(e);
+    if (a === this.hoverAnchor) {
+      // Still within the same link (moving over its children).
+      return;
+    }
+    this.hoverAnchor = a;
+    clearTimeout(this.hoverShowTimeout);
+    clearTimeout(this.hoverHideTimeout);
+
+    if (!this.isPreviewableLink(a)) {
+      this.hoverHideTimeout = setTimeout(() => this.hideAll(), 2000);
       return;
     }
 
-    if (!this.isGoodUrl(a.href)) {
+    const previewOnHover = (await Storage.get("preview-on-hover")) ?? true;
+    const delaySecs = (await Storage.get("preview-on-hover-delay")) ?? 1;
+    this.allowSameSite = (await Storage.get("preview-same-site-links")) ?? true;
+    if (this.hoverAnchor !== a) {
+      // The pointer moved on while settings were being read.
       return;
     }
 
-    if (!a.innerText.trim() && !a.querySelector("img,svg")) {
-      // Neither text nor an image inside — nothing visible to hover.
+    if (previewOnHover) {
+      // Preview directly on hover, no tooltip interaction needed.
+      this.hoverShowTimeout = setTimeout(() => {
+        this.hideAll();
+        this.sendMessage("preview", a.href);
+      }, delaySecs * 1000);
       return;
     }
 
-    // TODO: check if computed display is 'none', i.e. link is hidden.
-    this.attachedAnchors.add(a);
-
-    {
-      // Timers are per-anchor so rapid movement across links can't orphan them.
-      let showTimeout: any = null;
-      let hideTimeout: any = null;
-      let hovered = false;
-
-      // When a deep-click fires, stop the pending hover preview of the same
-      // link so it isn't sent twice.
-      this.setupDeepClick(a, () => {
-        hovered = false;
-        clearTimeout(showTimeout);
-        showTimeout = null;
-      });
-
-      // mouseenter/mouseleave don't re-fire when moving across the link's children.
-      a.addEventListener("mouseenter", async (e) => {
-        hovered = true;
-        if (hideTimeout) {
-          clearTimeout(hideTimeout);
-          hideTimeout = null;
-        }
-
-        const previewOnHover = (await Storage.get("preview-on-hover")) ?? true;
-        const delaySecs = (await Storage.get("preview-on-hover-delay")) ?? 1;
-        if (!hovered) {
-          // The pointer left the link while settings were being read.
-          return;
-        }
-        clearTimeout(showTimeout);
-
-        if (previewOnHover) {
-          // Preview directly on hover, no tooltip interaction needed.
-          showTimeout = setTimeout(() => {
-            this.hideAll();
-            this.sendMessage("preview", a.href);
-          }, delaySecs * 1000);
-          return;
-        }
-
-        showTimeout = setTimeout(() => {
-          this.showActions(a.getBoundingClientRect(), e, a.href, [
-            this.previewButton,
-          ]);
-        }, 500);
-      });
-
-      a.addEventListener("mouseleave", () => {
-        hovered = false;
-        if (showTimeout) {
-          clearTimeout(showTimeout);
-          showTimeout = null;
-        }
-        hideTimeout = setTimeout(() => {
-          this.hideAll();
-        }, 2000);
-      });
-    }
+    this.hoverShowTimeout = setTimeout(() => {
+      this.showActions(a.getBoundingClientRect(), e, a.href, [
+        this.previewButton,
+      ]);
+    }, 500);
   }
 
   /*
@@ -212,63 +194,76 @@ export class Floatie {
    * events are Safari-only), so press-and-hold is the closest mapping; the
    * real force event is still wired up opportunistically in case it exists.
    */
-  setupDeepClick(a: HTMLAnchorElement, onFire: () => void) {
+  setupDeepClick() {
     let pressTimer: any = null;
-    let pressed = false;
+    let pressedAnchor: HTMLAnchorElement | null = null;
     let previewFired = false;
 
-    const fire = () => {
+    const fire = (a: HTMLAnchorElement) => {
       previewFired = true;
-      onFire();
+      // Don't let the hover timer fire the same preview a second time.
+      clearTimeout(this.hoverShowTimeout);
       this.hideAll();
       this.sendMessage("preview", a.href);
     };
 
     const cancel = () => {
-      pressed = false;
+      pressedAnchor = null;
       if (pressTimer) {
         clearTimeout(pressTimer);
         pressTimer = null;
       }
     };
 
-    a.addEventListener("pointerdown", async (e: PointerEvent) => {
-      if (e.button !== 0) {
-        return;
-      }
-      pressed = true;
-      previewFired = false;
-      const deepClick = (await Storage.get("deep-click-preview")) ?? true;
-      if (!deepClick || !pressed) {
-        // Disabled, or released/left while settings were being read.
-        return;
-      }
-      pressTimer = setTimeout(fire, 450);
-    });
-    a.addEventListener("pointerup", cancel);
-    // Releasing away from the link produces no anchor click to swallow, so
-    // previewFired must be cleared too or a later normal click would be eaten.
-    a.addEventListener("pointerleave", () => {
-      cancel();
-      previewFired = false;
-    });
-    a.addEventListener("pointercancel", () => {
-      cancel();
-      previewFired = false;
-    });
+    document.addEventListener(
+      "pointerdown",
+      async (e: PointerEvent) => {
+        if (e.button !== 0) {
+          return;
+        }
+        const a = this.anchorFromEvent(e);
+        if (!this.isPreviewableLink(a)) {
+          return;
+        }
+        pressedAnchor = a;
+        previewFired = false;
+        const deepClick = (await Storage.get("deep-click-preview")) ?? true;
+        if (!deepClick || pressedAnchor !== a) {
+          // Disabled, or released/left while settings were being read.
+          return;
+        }
+        pressTimer = setTimeout(() => fire(a), 450);
+      },
+      true,
+    );
+    document.addEventListener("pointerup", cancel, true);
+    // Releasing away from the link produces no click to swallow, so
+    // previewFired must be cleared or a later normal click would be eaten.
+    document.addEventListener(
+      "pointercancel",
+      () => {
+        cancel();
+        previewFired = false;
+      },
+      true,
+    );
 
     // Real Force Touch, where the browser exposes it (Safari-only today).
-    a.addEventListener("webkitmouseforcedown", async () => {
+    document.addEventListener("webkitmouseforcedown", async (e: Event) => {
+      const a = this.anchorFromEvent(e);
+      if (!this.isPreviewableLink(a)) {
+        return;
+      }
       const deepClick = (await Storage.get("deep-click-preview")) ?? true;
       if (!deepClick) {
         return;
       }
       cancel();
-      fire();
+      fire(a);
     });
 
     // Swallow the click that ends a deep-click so the link doesn't navigate.
-    a.addEventListener(
+    document.addEventListener(
       "click",
       (e) => {
         if (previewFired) {
