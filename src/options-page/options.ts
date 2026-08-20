@@ -27,7 +27,7 @@ const configOptions: Config[] = [
     type: "range",
     title: i18n("Preview Width (%)"),
     description: i18n("The width of the preview panel relative to the page."),
-    default_value: 40,
+    default_value: 45,
     min: "20",
     max: "90",
   },
@@ -36,20 +36,9 @@ const configOptions: Config[] = [
     type: "range",
     title: i18n("Preview Height (%)"),
     description: i18n("The height of the preview panel relative to the page."),
-    default_value: 70,
+    default_value: 60,
     min: "20",
     max: "95",
-  },
-  {
-    id: "previewr-position",
-    type: "select",
-    title: i18n("Panel Position"),
-    description: i18n("The side of the page in which to display the preview."),
-    default_value: "right",
-    options: [
-      { id: "right", text: i18n("Right side") },
-      { id: "left", text: i18n("Left side") },
-    ],
   },
   {
     id: "glance-animation",
@@ -141,7 +130,7 @@ const configOptions: Config[] = [
     type: "switch",
     title: "Click Preview to Open",
     description:
-      "Clicking anywhere on the preview opens the page in a new tab instead of interacting with it, like Safari's Glance preview.",
+      "Clicking anywhere on the preview opens the page in a new tab. Off by default: leaving it off lets you scroll and click inside the preview normally.",
     default_value: false,
   },
   {

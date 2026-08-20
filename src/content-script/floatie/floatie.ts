@@ -23,9 +23,11 @@ export class Floatie {
   logger = new Logger(this);
   allowSameSite = true;
   altClickPreview = true;
+  pointer = { x: 0, y: 0 };
   hoverAnchor: HTMLAnchorElement | null = null;
   hoverShowTimeout?: any;
   hoverHideTimeout?: any;
+  hoverCloseTimeout?: any;
 
   constructor() {
     const markup = `
@@ -116,6 +118,16 @@ export class Floatie {
       this.altClickPreview = v ?? true;
     });
 
+    // Track the cursor so a preview can open exactly where it is. Kept as a
+    // bare coordinate write so the listener stays cheap on every mousemove.
+    document.addEventListener(
+      "mousemove",
+      (e: MouseEvent) => {
+        this.pointer = { x: e.clientX, y: e.clientY };
+      },
+      { passive: true, capture: true },
+    );
+
     // mouseover bubbles (mouseenter does not), so it can be delegated.
     document.addEventListener("mouseover", (e) => this.onLinkHover(e), true);
     this.setupDeepClick();
@@ -143,8 +155,9 @@ export class Floatie {
         e.preventDefault();
         e.stopImmediatePropagation();
         clearTimeout(this.hoverShowTimeout);
+        clearTimeout(this.hoverCloseTimeout);
         this.hideAll();
-        this.sendMessage("preview", a.href);
+        this.sendMessage("preview", a.href, "click");
       },
       true,
     );
@@ -193,8 +206,12 @@ export class Floatie {
 
     if (!this.isPreviewableLink(a)) {
       this.hoverHideTimeout = setTimeout(() => this.hideAll(), 2000);
+      // Pointer is off every link now; a hover-opened preview should go away
+      // unless the pointer is heading into the preview itself.
+      this.scheduleHoverClose();
       return;
     }
+    clearTimeout(this.hoverCloseTimeout);
 
     const previewOnHover = (await Storage.get("preview-on-hover")) ?? true;
     const delaySecs = (await Storage.get("preview-on-hover-delay")) ?? 1;
@@ -209,7 +226,7 @@ export class Floatie {
       // Preview directly on hover, no tooltip interaction needed.
       this.hoverShowTimeout = setTimeout(() => {
         this.hideAll();
-        this.sendMessage("preview", a.href);
+        this.sendMessage("preview", a.href, "hover");
       }, delaySecs * 1000);
       return;
     }
@@ -237,8 +254,9 @@ export class Floatie {
       previewFired = true;
       // Don't let the hover timer fire the same preview a second time.
       clearTimeout(this.hoverShowTimeout);
+      clearTimeout(this.hoverCloseTimeout);
       this.hideAll();
-      this.sendMessage("preview", a.href);
+      this.sendMessage("preview", a.href, "click");
     };
 
     const cancel = () => {
@@ -531,15 +549,59 @@ export class Floatie {
         this.sendMessage(
           b.getAttribute("data-action") || "unknown-action",
           text,
+          "click",
         );
+        clearTimeout(this.hoverCloseTimeout);
         this.hideAll();
       };
     });
   }
 
-  sendMessage(action: string, data: any) {
+  /*
+   * True when the cursor is over the open preview. Once the pointer is over
+   * the preview's cross-origin iframe the page stops receiving mouse events
+   * altogether, so the last known pointer position is tested against the
+   * panel's rect rather than relying on further events arriving.
+   */
+  isPointerOverPreview(): boolean {
+    const wb = document.querySelector("search-preview-window .winbox");
+    if (!wb) {
+      return false;
+    }
+    const r = wb.getBoundingClientRect();
+    return (
+      this.pointer.x >= r.left &&
+      this.pointer.x <= r.right &&
+      this.pointer.y >= r.top &&
+      this.pointer.y <= r.bottom
+    );
+  }
+
+  /*
+   * Hovering away closes a preview that hover opened. A preview opened by a
+   * click is left alone — only a click outside dismisses that one.
+   */
+  scheduleHoverClose() {
+    clearTimeout(this.hoverCloseTimeout);
+    this.hoverCloseTimeout = setTimeout(() => {
+      if (this.isPointerOverPreview()) {
+        return;
+      }
+      this.sendMessage("close-if-hover", null);
+    }, 600);
+  }
+
+  sendMessage(action: string, data: any, trigger?: "hover" | "click") {
     window.postMessage(
-      { application: manifest.__package_name__, action: action, data: data },
+      {
+        application: manifest.__package_name__,
+        action: action,
+        data: data,
+        trigger: trigger,
+        // Viewport coords, so the preview can open at the cursor. .winbox is
+        // position:fixed, so these need no scroll adjustment.
+        point: this.pointer,
+      },
       window.location.origin,
     );
     // chrome.runtime.sendMessage won't put because angular is executed in page context.
