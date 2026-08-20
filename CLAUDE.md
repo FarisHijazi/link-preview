@@ -44,9 +44,27 @@ npm run build   # outputs unpacked extension to build/chrome-dev/
 
 Load `build/chrome-dev/` via chrome://extensions → "Load unpacked" (Developer mode on).
 
-Chrome does **not** pick up a rebuild on its own: after `npm run build`, click ↻ on the
-extension in chrome://extensions *and* reload the page under test, since content scripts
-only inject at page load. Stale-bundle confusion looks exactly like a broken feature.
+### ALWAYS rebuild before saying a change is done
+
+`build/chrome-dev/` is the only thing that actually runs — editing `src/` changes nothing
+anyone can see or test. **Run `npm run build` after every code change, before reporting it
+as finished**, and never describe a change as working on the strength of the source alone.
+A correct fix sitting in an unbuilt tree is indistinguishable from a broken one, and the
+time lost goes into debugging code that was never running.
+
+So, every time, in this order:
+
+1. `npm run build` — must exit clean.
+2. Exercise the change in a real browser (see the e2e/probe scripts described in the
+   devlog) — source review is not evidence.
+3. Only then report it as done, saying what was verified.
+
+The same applies on the browser side, and it is *not* automatic: Chrome does not pick up a
+rebuild on its own. After `npm run build`, click ↻ on the extension in chrome://extensions
+**and** reload the page under test, since content scripts only inject at page load. A stale
+loaded bundle looks exactly like a broken feature — it has already cost one full debugging
+round here. When previews behave differently for cross-site vs same-site or static vs
+dynamic links, suspect a stale loaded bundle before suspecting the code.
 
 ## Repo notes
 
