@@ -105,6 +105,14 @@ const configOptions: Config[] = [
     default_value: true,
   },
   {
+    id: "alt-click-preview",
+    type: "switch",
+    title: "Option/Alt + Click to Preview",
+    description:
+      "Hold Option (Alt) and click a link to preview it. This replaces Chrome's Alt+click 'download linked file' shortcut.",
+    default_value: true,
+  },
+  {
     id: "preview-same-site-links",
     type: "switch",
     title: "Preview Same-Site Links",
