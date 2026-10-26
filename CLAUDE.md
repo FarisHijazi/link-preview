@@ -21,6 +21,7 @@ setting id in `src/options-page/options.ts`:
 | Clicking outside dismisses the peek | `close-on-click-outside` | on |
 | Clicking the peek itself commits to the page | `click-preview-to-open` | off |
 | Any link peeks, including same-site app links (Basecamp, GitHub) | `preview-same-site-links` | on |
+| (not Safari) Triple-click a link to peek; holds every plain link click ~300ms | `triple-click-preview` | off |
 
 Consequences worth keeping in mind:
 
@@ -56,7 +57,9 @@ So, every time, in this order:
 
 1. `npm run build` — must exit clean.
 2. Exercise the change in a real browser (see the e2e/probe scripts described in the
-   devlog) — source review is not evidence.
+   devlog) — source review is not evidence. `spec/previews-e2e.mjs` is the headless
+   regression check for every trigger (hover open/close, alt-click, press-and-hold,
+   triple-click): `CHROME_PATH=<Chrome for Testing> node spec/previews-e2e.mjs`.
 3. Only then report it as done, saying what was verified.
 
 The same applies on the browser side, and it is *not* automatic: Chrome does not pick up a

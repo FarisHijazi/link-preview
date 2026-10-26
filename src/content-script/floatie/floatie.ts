@@ -23,6 +23,7 @@ export class Floatie {
   logger = new Logger(this);
   allowSameSite = true;
   altClickPreview = true;
+  tripleClickPreview = false;
   pointer = { x: 0, y: 0 };
   hoverAnchor: HTMLAnchorElement | null = null;
   hoverShowTimeout?: any;
@@ -117,6 +118,9 @@ export class Floatie {
     Storage.get("alt-click-preview").then((v) => {
       this.altClickPreview = v ?? true;
     });
+    Storage.get("triple-click-preview").then((v) => {
+      this.tripleClickPreview = v ?? false;
+    });
 
     // Track the cursor so a preview can open exactly where it is. Kept as a
     // bare coordinate write so the listener stays cheap on every mousemove.
@@ -132,6 +136,83 @@ export class Floatie {
     document.addEventListener("mouseover", (e) => this.onLinkHover(e), true);
     this.setupDeepClick();
     this.setupAltClick();
+    this.setupTripleClick();
+  }
+
+  /*
+   * Triple-click previews a link. The first click of a triple-click would
+   * navigate before the third arrives, so — only while this opt-in setting is
+   * on — a link's click is held for the multi-click window and replayed if no
+   * third click follows. Like alt-click, the setting is read from a cached
+   * field because preventDefault must happen synchronously.
+   */
+  setupTripleClick() {
+    const windowMs = 300;
+    let held: { a: HTMLAnchorElement; init: MouseEventInit } | null = null;
+    let replayTimer: any = null;
+    let replaying = false;
+
+    document.addEventListener(
+      "click",
+      (e: MouseEvent) => {
+        if (replaying || !this.tripleClickPreview || e.button !== 0) {
+          return;
+        }
+        if (e.altKey || e.metaKey || e.ctrlKey || e.shiftKey) {
+          // Modified clicks (new tab, alt-click preview, ...) pass straight through.
+          return;
+        }
+        const a = this.anchorFromEvent(e);
+        if (!this.isPreviewableLink(a)) {
+          return;
+        }
+        e.preventDefault();
+        e.stopImmediatePropagation();
+        clearTimeout(replayTimer);
+
+        if (e.detail >= 3 && held?.a === a) {
+          held = null;
+          clearTimeout(this.hoverShowTimeout);
+          clearTimeout(this.hoverCloseTimeout);
+          window.getSelection()?.removeAllRanges(); // triple-click selected the line
+          this.hideAll();
+          this.sendMessage("preview", a.href, "click");
+          return;
+        }
+
+        if (e.detail <= 1 || held?.a !== a) {
+          held = {
+            a,
+            init: {
+              bubbles: true,
+              cancelable: true,
+              composed: true,
+              view: window,
+              clientX: e.clientX,
+              clientY: e.clientY,
+              screenX: e.screenX,
+              screenY: e.screenY,
+            },
+          };
+        }
+        // No third click within the window: let the original click through,
+        // still inside the real click's transient user activation.
+        replayTimer = setTimeout(() => {
+          const h = held;
+          held = null;
+          if (!h) {
+            return;
+          }
+          replaying = true;
+          try {
+            h.a.dispatchEvent(new MouseEvent("click", h.init));
+          } finally {
+            replaying = false;
+          }
+        }, windowMs);
+      },
+      true,
+    );
   }
 
   /*
@@ -196,7 +277,7 @@ export class Floatie {
 
   async onLinkHover(e: MouseEvent) {
     const a = this.anchorFromEvent(e);
-    if (a === this.hoverAnchor) {
+    if (a && a === this.hoverAnchor) {
       // Still within the same link (moving over its children).
       return;
     }
@@ -204,6 +285,10 @@ export class Floatie {
     clearTimeout(this.hoverShowTimeout);
     clearTimeout(this.hoverHideTimeout);
 
+    // Every non-link mouseover re-arms the close, not just the first one after
+    // leaving a link: a pointer that crossed plain page into the preview and
+    // then left it again produces only non-link mouseovers, and deduplicating
+    // those left a hover-opened preview stuck open.
     if (!this.isPreviewableLink(a)) {
       this.hoverHideTimeout = setTimeout(() => this.hideAll(), 2000);
       // Pointer is off every link now; a hover-opened preview should go away
@@ -217,6 +302,8 @@ export class Floatie {
     const delaySecs = (await Storage.get("preview-on-hover-delay")) ?? 1;
     this.allowSameSite = (await Storage.get("preview-same-site-links")) ?? true;
     this.altClickPreview = (await Storage.get("alt-click-preview")) ?? true;
+    this.tripleClickPreview =
+      (await Storage.get("triple-click-preview")) ?? false;
     if (this.hoverAnchor !== a) {
       // The pointer moved on while settings were being read.
       return;

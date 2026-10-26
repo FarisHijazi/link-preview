@@ -118,6 +118,14 @@ const configOptions: Config[] = [
     default_value: true,
   },
   {
+    id: "triple-click-preview",
+    type: "switch",
+    title: "Triple-Click to Preview",
+    description:
+      "Triple-click a link to preview it. The first click of a triple-click would otherwise navigate, so while this is on every normal link click waits ~300ms before it goes through.",
+    default_value: false,
+  },
+  {
     id: "preview-same-site-links",
     type: "switch",
     title: "Preview Same-Site Links",
